@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  /* ===== 液态玻璃面板 ===== */
+  .panel {
+    position: relative;
+    width: 756px; height: 456px;
+    border-radius: 26px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    box-shadow:
+      0 0 0 2.5px rgba(8, 10, 16, 0.22),          /* 玻璃厚度暗边 */
+      0 24px 60px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),    /* 1px 内发光 */
+      inset 0 -3px 8px rgba(0, 0, 0, 0.20);
+    transform-origin: bottom center;
+    opacity: 0;
+    will-change: transform;
+  }
+  /* 每次打开时从 Dock 位置弹性弹出 */
+  .panel.enter {
+    animation: spring-in 0.42s cubic-bezier(0.34, 1.5, 0.64, 1) forwards;
+  }
+  @keyframes spring-in {
+    0%   { transform: scale(0.5) translateY(140px); opacity: 0; }
+    60%  { opacity: 1; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+  }
+  /* 收回 Dock 的关闭动画 */
+  .panel.exit {
+    animation: shrink-out 0.20s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+  }
+  @keyframes shrink-out {
+    0%   { transform: scale(1) translateY(0); opacity: 1; }
+    100% { transform: scale(0.55) translateY(150px); opacity: 0; }
+  }
+  .layer { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+  /* 材质层：backdrop-filter + background 渐变共同模拟 */
+  .layer-glass {
+    background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.08),
+      rgba(255, 255, 255, 0.025) 45%,
+      rgba(255, 255, 255, 0.05));
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+  }
+  @supports (backdrop-filter: url(#lg-refract)) {
+    .layer-glass {
+      backdrop-filter: blur(16px) saturate(150%) url(#lg-refract);
+      -webkit-backdrop-filter: blur(16px) saturate(150%) url(#lg-refract);
+    }
+  }
+  /* 悬停时模糊略微减弱 */
+  .panel:hover .layer-glass {
+    backdrop-filter: blur(13px) saturate(150%);
+    -webkit-backdrop-filter: blur(13px) saturate(150%);
+  }
+  /* 顶部弧形高光带：默认缓慢流动，鼠标移动时跟随 */
+  .layer-spec {
+    background: radial-gradient(150% 85% at 50% -30%, rgba(255, 255, 255, 0.40), transparent 60%);
+    mix-blend-mode: screen;
+    animation: spec-drift 10s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  @keyframes spec-drift {
+    from { transform: translateX(-5%); }
+    to   { transform: translateX(5%); }
+  }
+  /* 点击水波纹 */
+  .ripple {
+    position: absolute; width: 60px; height: 60px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.12) 45%, transparent 70%);
+    transform: scale(0.3); opacity: 0.9; pointer-events: none; z-index: 5;
+    animation: rip 0.55s cubic-bezier(0.22, 1.4, 0.36, 1) forwards;
+  }
+  @keyframes rip {
+    0%   { transform: scale(0.3); opacity: 0.9; }
+    100% { transform: scale(2.6); opacity: 0; }
+  }
+  .content {
+    position: relative;
+    display: flex; flex-direction: column;
+    width: 100%; height: 100%;
+    padding: 20px 24px 14px;
+  }
+  .search {
+    width: 240px; margin: 0 auto 16px;
+    display: flex; align-items: center;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
+    border-radius: 10px; padding: 6px 12px;
+  }
+  .search svg { width: 14px; height: 14px; fill: rgba(255,255,255,0.55); flex: none; }
+  .search input {
+    flex: 1; background: none; border: none; outline: none;
+    color: #fff; font-size: 13px; margin-left: 8px;
+  }
+  .search input::placeholder { color: rgba(255, 255, 255, 0.45); }
+  .grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .grid.turn {
+    animation: page-turn 0.22s ease;
+  }
+  @keyframes page-turn {
+    from { opacity: 0.25; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .cell {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; border-radius: 14px; cursor: pointer; padding: 6px 4px;
+    position: relative; overflow: hidden;
+    transition: background 0.15s, transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+  .cell:hover { background: rgba(255, 255, 255, 0.12); transform: translateY(-2px) scale(1.03); }
+  .cell:active { filter: brightness(0.75); }
+  .cell img { width: 44px; height: 44px; pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+  .cell .fallback {
+    width: 44px; height: 44px; border-radius: 11px;
+    background: rgba(255, 255, 255, 0.20); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 19px; font-weight: 600; pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .cell span {
+    font-size: 11.5px; color: rgba(255, 255, 255, 0.95);
+    max-width: 82px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; text-align: center;
+    padding: 1px 6px; border-radius: 6px;
+    background: rgba(0, 0, 0, 0.25); /* 局部降亮，保 4.5:1 对比度 */
+  }
+  .empty {
+    grid-column: 1 / -1; grid-row: 1 / -1;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255, 255, 255, 0.55); font-size: 13px;
+  }
+  .dots { display: flex; justify-content: center; gap: 8px; padding-top: 10px; }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.28); cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+  }
+  .dot.active { background: rgba(255, 255, 255, 0.95); transform: scale(1.15); }
+  .mini-menu {
+    position: fixed; display: none; z-index: 99;
+    background: rgba(28, 28, 34, 0.88);
+    backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px; padding: 4px; min-width: 140px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+  .mini-menu div {
+    padding: 7px 12px; border-radius: 7px; color: #f2f2f2;
+    font-size: 12.5px; cursor: pointer;
+  }
+  .mini-menu div:hover { background: rgba(255, 255, 255, 0.14); }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute">
+    <filter id="lg-refract" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="2" seed="7" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+  <div class="panel">
+    <div class="layer layer-glass"></div>
+    <div class="layer layer-spec"></div>
+    <div class="content">
+      <div class="search">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14"/></svg>
+        <input id="search" placeholder="搜索应用" autofocus>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="dots" id="dots"></div>
+    </div>
+  </div>
+  <div class="mini-menu" id="miniMenu"><div id="pinItem">固定到底部 Dock</div></div>
+
+<script>
+  const grid = document.getElementById('grid');
+  const dotsBox = document.getElementById('dots');
+  const searchInput = document.getElementById('search');
+  const miniMenu = document.getElementById('miniMenu');
+  const pinItem = document.getElementById('pinItem');
+  const panel = document.querySelector('.panel');
+
+  // 每次打开都从 Dock 位置重新弹出
+  function replayEnter() {
+    panel.classList.remove('enter');
+    panel.style.opacity = '';
+    panel.style.transform = '';
+    void panel.offsetWidth; // 强制重排以重启动画
+    panel.classList.add('enter');
+    clearTimeout(panel._t);
+    // 动画落定后移除 class（保留透明度），让位给悬停倾斜的 inline transform
+    panel._t = setTimeout(() => {
+      panel.style.opacity = '1';
+      panel.classList.remove('enter');
+    }, 460);
+  }
+
+  // 水波纹
+  function spawnRipple(el, x, y) {
+    const r = el.getBoundingClientRect();
+    const s = document.createElement('span');
+    s.className = 'ripple';
+    s.style.left = (x - r.left - 30) + 'px';
+    s.style.top = (y - r.top - 30) + 'px';
+    el.appendChild(s);
+    setTimeout(() => s.remove(), 600);
+  }
+
+  // 悬停倾斜 + 高光跟随鼠标
+  const spec = document.querySelector('.layer-spec');
+  panel.addEventListener('mousemove', (e) => {
+    if (panel.classList.contains('enter') || panel.classList.contains('exit')) return;
+    const r = panel.getBoundingClientRect();
+    const nx = (e.clientX - r.left) / r.width - 0.5;
+    const ny = (e.clientY - r.top) / r.height - 0.5;
+    panel.style.transform = `perspective(1200px) rotateY(${(nx * 3).toFixed(2)}deg) rotateX(${(-ny * 3).toFixed(2)}deg)`;
+    spec.style.animation = 'none';
+    spec.style.transform = `translateX(${(nx * 30).toFixed(1)}px)`;
+  });
+  panel.addEventListener('mouseleave', () => {
+    if (!panel.classList.contains('exit')) panel.style.transform = '';
+    spec.style.animation = '';
+    spec.style.transform = '';
+  });
+
+  const COLS = 8, ROWS = 3, PER_PAGE = COLS * ROWS;
+  let allApps = [];
+  let filtered = [];
+  let page = 0;
+  let pinned = [];
+  let menuTarget = null;
+  const iconMemo = new Map();
+
+  function applyFilter() {
+    const q = searchInput.value.trim().toLowerCase();
+    filtered = q ? allApps.filter(a => a.name.toLowerCase().includes(q)) : allApps;
+    page = 0;
+    render();
+  }
+
+  function render() {
+    const pages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    page = Math.min(page, pages - 1);
+    grid.replaceChildren();
+    grid.classList.remove('turn');
+    void grid.offsetWidth;
+    grid.classList.add('turn');
+    const slice = filtered.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
+    if (!slice.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = allApps.length ? '没有匹配的应用' : '没有找到已安装的应用';
+      grid.appendChild(e);
+    }
+    for (const a of slice) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.title = a.name;
+      const fb = document.createElement('div');
+      fb.className = 'fallback';
+      fb.textContent = a.name.charAt(0).toUpperCase();
+      const label = document.createElement('span');
+      label.textContent = a.name;
+      cell.append(fb, label);
+      cell.addEventListener('pointerdown', (e) => {
+        if (e.button === 0) spawnRipple(cell, e.clientX, e.clientY);
+      });
+      cell.addEventListener('click', () => {
+        window.dockAPI.launch(a.path);
+        window.dockAPI.hideLauncher();
+      });
+      cell.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        menuTarget = a.path;
+        const isPinned = pinned.includes(a.path);
+        pinItem.textContent = isPinned ? '已固定（点击取消）' : '固定到底部 Dock';
+        miniMenu.style.display = 'block';
+        miniMenu.style.left = Math.min(e.clientX, window.innerWidth - 150) + 'px';
+        miniMenu.style.top = Math.min(e.clientY, window.innerHeight - 60) + 'px';
+      });
+      grid.appendChild(cell);
+      if (iconMemo.has(a.path)) {
+        setIcon(cell, iconMemo.get(a.path));
+      } else {
+        window.dockAPI.getIcon(a.path).then(url => {
+          iconMemo.set(a.path, url);
+          setIcon(cell, url);
+        });
+      }
+    }
+    dotsBox.replaceChildren();
+    if (pages > 1) {
+      for (let i = 0; i < pages; i++) {
+        const d = document.createElement('div');
+        d.className = 'dot' + (i === page ? ' active' : '');
+        d.addEventListener('click', () => { page = i; render(); });
+        dotsBox.appendChild(d);
+      }
+    }
+  }
+
+  function setIcon(cell, url) {
+    if (!url || !cell.isConnected) return;
+    const img = document.createElement('img');
+    img.src = url;
+    img.draggable = false;
+    cell.replaceChildren(img, cell.querySelector('span'));
+  }
+
+  pinItem.addEventListener('click', () => {
+    if (!menuTarget) return;
+    if (pinned.includes(menuTarget)) {
+      window.dockAPI.unpin(menuTarget);
+    } else {
+      window.dockAPI.pin(menuTarget);
+    }
+    miniMenu.style.display = 'none';
+  });
+  document.addEventListener('click', (e) => {
+    if (!miniMenu.contains(e.target)) miniMenu.style.display = 'none';
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.dockAPI.hideLauncher();
+    const pages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    if (e.key === 'ArrowRight' && page < pages - 1) { page++; render(); }
+    if (e.key === 'ArrowLeft' && page > 0) { page--; render(); }
+  });
+  searchInput.addEventListener('input', applyFilter);
+
+  // 鼠标滚轮翻页（带滚动量累积，避免触控板一次跳多页）
+  let wheelAcc = 0;
+  document.addEventListener('wheel', (e) => {
+    const pages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    if (pages < 2) return;
+    wheelAcc += e.deltaY;
+    if (Math.abs(wheelAcc) >= 50) {
+      const dir = wheelAcc > 0 ? 1 : -1;
+      const np = Math.min(pages - 1, Math.max(0, page + dir));
+      if (np !== page) { page = np; render(); }
+      wheelAcc = 0;
+    }
+  }, { passive: true });
+
+  window.dockAPI.onAppsChanged((apps) => {
+    allApps = apps;
+    applyFilter();
+    replayEnter();
+    searchInput.focus();
+  });
+  window.dockAPI.onPinnedChanged((p) => { pinned = p.map(i => i.path || i); });
+
+  // 失焦/关闭：先播收回动画，结束后真正隐藏窗口
+  let exiting = false;
+  window.dockAPI.onRequestExit(() => {
+    if (exiting) return;
+    exiting = true;
+    panel.classList.remove('enter');
+    panel.classList.add('exit');
+    setTimeout(() => {
+      exiting = false;
+      panel.classList.remove('exit');
+      window.dockAPI.hideLauncher();
+    }, 190);
+  });
+
+  Promise.all([window.dockAPI.getApps(), window.dockAPI.getPinned()]).then(([apps, p]) => {
+    allApps = apps;
+    pinned = p.map(i => i.path || i);
+    applyFilter();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  body {
+    display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 8px;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  /* ===== Liquid Glass（按规范：模糊20px/饱和150% + 渐变材质 + 厚度暗边 + 流动高光） ===== */
+  .dock {
+    position: relative;
+    display: flex; align-items: center; gap: 6px;
+    height: 62px; padding: 0 12px;
+    border-radius: 22px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    box-shadow:
+      0 0 0 2.5px rgba(8, 10, 16, 0.22),          /* 玻璃厚度：2~3px 暗色外圈 */
+      0 14px 40px rgba(0, 0, 0, 0.32),
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),    /* 1px 内发光（白 0.3~0.5） */
+      inset 0 -3px 8px rgba(0, 0, 0, 0.22),
+      inset 2px 0 4px rgba(0, 0, 0, 0.10);
+    transform-origin: bottom center;
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+  .layer { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+  /* 材质层：backdrop-filter + background 渐变共同模拟（规范硬性要求） */
+  .layer-glass {
+    background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.09),
+      rgba(255, 255, 255, 0.03) 45%,
+      rgba(255, 255, 255, 0.05));
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+  }
+  /* 真折射：位移滤镜叠加，支持时启用（轻微放大折射感） */
+  @supports (backdrop-filter: url(#lg-refract)) {
+    .layer-glass {
+      backdrop-filter: blur(16px) saturate(150%) url(#lg-refract);
+      -webkit-backdrop-filter: blur(16px) saturate(150%) url(#lg-refract);
+    }
+  }
+  /* 悬停时模糊略微减弱 */
+  .dock:hover .layer-glass {
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+  }
+  /* 顶部弧形高光带：默认缓慢流动，鼠标进入后跟随鼠标 */
+  .layer-spec {
+    background: radial-gradient(150% 85% at 50% -30%, rgba(255, 255, 255, 0.50), transparent 60%);
+    mix-blend-mode: screen;
+    animation: spec-drift 9s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  @keyframes spec-drift {
+    from { transform: translateX(-6%); }
+    to   { transform: translateX(6%); }
+  }
+  .content { position: relative; display: flex; align-items: center; gap: 6px; }
+  .item {
+    width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 13px; cursor: pointer; position: relative;
+    transition: transform 0.16s cubic-bezier(0.34, 1.35, 0.64, 1),
+                margin 0.16s cubic-bezier(0.34, 1.35, 0.64, 1), background 0.15s;
+    transform-origin: bottom center;
+  }
+  .item:hover { background: rgba(255, 255, 255, 0.10); }
+  .item img { width: 38px; height: 38px; pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+  .item .fallback {
+    width: 38px; height: 38px; border-radius: 9px;
+    background: rgba(255, 255, 255, 0.20); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 600; pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .item.pressed { filter: brightness(0.7); }
+  /* 点击水波纹 */
+  .ripple {
+    position: absolute; width: 42px; height: 42px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.14) 45%, transparent 70%);
+    transform: scale(0.3); opacity: 0.9; pointer-events: none; z-index: 5;
+    animation: rip 0.55s cubic-bezier(0.22, 1.4, 0.36, 1) forwards;
+  }
+  @keyframes rip {
+    0%   { transform: scale(0.3); opacity: 0.9; }
+    100% { transform: scale(2.8); opacity: 0; }
+  }
+  .item .dot {
+    position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+  }
+  .menu-btn svg { width: 25px; height: 25px; fill: rgba(255,255,255,0.95); pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35)); }
+  .sep { width: 1px; height: 34px; background: rgba(255, 255, 255, 0.28); margin: 0 4px; flex: none; }
+  .hint {
+    color: rgba(255, 255, 255, 0.85); font-size: 12.5px; padding: 2px 10px;
+    white-space: nowrap; border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+  }
+  .mini-menu {
+    position: fixed; display: none; z-index: 99;
+    background: rgba(28, 28, 34, 0.85);
+    backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px; padding: 4px; min-width: 120px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+  .mini-menu div {
+    padding: 7px 12px; border-radius: 7px; color: #f2f2f2;
+    font-size: 12.5px; cursor: pointer;
+  }
+  .mini-menu div:hover { background: rgba(255, 255, 255, 0.14); }
+  .tip {
+    position: absolute; bottom: 76px; left: 0;
+    padding: 5px 12px; border-radius: 9px;
+    background: rgba(18, 18, 24, 0.88);
+    backdrop-filter: blur(14px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 18px rgba(0,0,0,0.4);
+    color: rgba(255, 255, 255, 0.95); font-size: 12px; white-space: nowrap;
+    transform: translateX(-50%) scale(0.9); opacity: 0;
+    transition: opacity 0.16s ease, transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1);
+    pointer-events: none; z-index: 50;
+  }
+  .tip.show { opacity: 1; transform: translateX(-50%) scale(1); }
+  .tip em { font-style: normal; color: rgba(255, 255, 255, 0.55); }
+</style>
+</head>
+<body>
+  <!-- 折射滤镜：低强度位移，配合 20px 模糊形成轻微放大折射感 -->
+  <svg width="0" height="0" style="position:absolute">
+    <filter id="lg-refract" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="2" seed="7" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+  <div class="dock" id="dock">
+    <div class="layer layer-glass"></div>
+    <div class="layer layer-spec" id="spec"></div>
+    <div class="content" id="content">
+      <div class="item menu-btn" id="menuBtn">
+        <svg viewBox="0 0 24 24"><path d="M4 4h4.5v4.5H4zM9.75 4h4.5v4.5h-4.5zM15.5 4H20v4.5h-4.5zM4 9.75h4.5v4.5H4zM9.75 9.75h4.5v4.5h-4.5zM15.5 9.75H20v4.5h-4.5zM4 15.5h4.5V20H4zM9.75 15.5h4.5V20h-4.5zM15.5 15.5H20V20h-4.5z"/></svg>
+      </div>
+      <div class="sep" id="sep" style="display:none"></div>
+    </div>
+  </div>
+  <div class="mini-menu" id="miniMenu"><div id="unpinItem">从 Dock 移除</div></div>
+  <div class="tip" id="tip"></div>
+
+<script>
+  const dock = document.getElementById('dock');
+  const content = document.getElementById('content');
+  const sep = document.getElementById('sep');
+  const miniMenu = document.getElementById('miniMenu');
+  const tip = document.getElementById('tip');
+  const spec = document.getElementById('spec');
+  let menuTarget = null;
+  let runningApps = [];
+  let pinnedItems = [];
+
+  document.getElementById('menuBtn').dataset.tip = '所有应用';
+
+  // 悬停标签
+  content.addEventListener('mouseover', (e) => {
+    const item = e.target.closest('.item');
+    if (!item || !item.dataset.tip) return;
+    tip.innerHTML = item.dataset.tip;
+    const r = item.getBoundingClientRect();
+    tip.style.left = (r.left + r.width / 2) + 'px';
+    tip.classList.add('show');
+  });
+  content.addEventListener('mouseout', (e) => {
+    const item = e.target.closest('.item');
+    if (item && !item.contains(e.relatedTarget)) tip.classList.remove('show');
+  });
+  dock.addEventListener('mouseleave', () => tip.classList.remove('show'));
+
+  function nameOf(p) {
+    const base = p.split('\\').pop().split('/').pop();
+    return base.replace(/\.(lnk|url|exe)$/i, '');
+  }
+
+  function makeIcon(el, iconPath, displayName) {
+    const fb = document.createElement('div');
+    fb.className = 'fallback';
+    fb.textContent = displayName.charAt(0).toUpperCase();
+    el.appendChild(fb);
+    window.dockAPI.getIcon(iconPath).then(url => {
+      if (!url) return;
+      const img = document.createElement('img');
+      img.src = url;
+      img.draggable = false;
+      const dot = el.querySelector('.dot');
+      el.replaceChildren(...(dot ? [img, dot] : [img]));
+    });
+  }
+
+  // 水波纹：从点击位置扩散的弹性动画
+  function spawnRipple(el, x, y) {
+    const r = el.getBoundingClientRect();
+    const s = document.createElement('span');
+    s.className = 'ripple';
+    s.style.left = (x - r.left - 21) + 'px';
+    s.style.top = (y - r.top - 21) + 'px';
+    el.appendChild(s);
+    setTimeout(() => s.remove(), 600);
+  }
+
+  // pointerdown 即响应 + 水波纹
+  function bindPress(el, action) {
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      el.classList.add('pressed');
+      spawnRipple(el, e.clientX, e.clientY);
+      action();
+    });
+    el.addEventListener('pointerup', () => el.classList.remove('pressed'));
+    el.addEventListener('pointerleave', () => el.classList.remove('pressed'));
+  }
+
+  function renderRunningDot(el, isRunning) {
+    const old = el.querySelector('.dot');
+    if (isRunning && !old) {
+      const d = document.createElement('div');
+      d.className = 'dot';
+      el.appendChild(d);
+    } else if (!isRunning && old) {
+      old.remove();
+    }
+  }
+
+  function updateTip(el, isRunning, isRunningOnly) {
+    if (isRunningOnly) {
+      el.dataset.tip = `${el.dataset.name} <em>· 正在运行</em>`;
+    } else {
+      el.dataset.tip = isRunning
+        ? `${el.dataset.name} <em>· 正在运行</em>`
+        : `${el.dataset.name} <em>· 已固定</em>`;
+    }
+  }
+
+  async function renderPinned(pinned) {
+    pinnedItems = pinned;
+    content.querySelectorAll('.pinned-item, .hint').forEach(el => el.remove());
+    sep.style.display = pinned.length ? '' : 'none';
+    if (!pinned.length) {
+      const h = document.createElement('div');
+      h.className = 'hint';
+      h.textContent = '点击左侧按钮打开应用面板，右键应用可固定到这里';
+      content.appendChild(h);
+      renderRunning(runningApps);
+      return;
+    }
+    const runPaths = new Set(runningApps.map(a => a.path.toLowerCase()));
+    for (const item of pinned) {
+      const el = document.createElement('div');
+      el.className = 'item pinned-item';
+      el.dataset.path = item.path;
+      el.dataset.target = (item.target || '').toLowerCase();
+      el.dataset.name = nameOf(item.path);
+      const isRunning = item.target && runPaths.has(el.dataset.target);
+      renderRunningDot(el, isRunning);
+      updateTip(el, isRunning, false);
+      makeIcon(el, item.path, nameOf(item.path));
+      bindPress(el, () => {
+        const match = runningApps.find(a => a.path.toLowerCase() === el.dataset.target);
+        if (match) window.dockAPI.focusWindow(match.handle, match.pid);
+        else window.dockAPI.launch(item.path);
+      });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        menuTarget = item.path;
+        miniMenu.style.display = 'block';
+        miniMenu.style.left = Math.min(e.clientX, window.innerWidth - 130) + 'px';
+        miniMenu.style.top = (e.clientY - 46) + 'px';
+      });
+      content.appendChild(el);
+    }
+    renderRunning(runningApps);
+  }
+
+  function renderRunning(apps) {
+    runningApps = apps;
+    content.querySelectorAll('.running-item, #runSep').forEach(el => el.remove());
+    const pinnedTargets = new Set(pinnedItems.map(i => (i.target || '').toLowerCase()).filter(Boolean));
+    const extras = apps.filter(a => !pinnedTargets.has(a.path.toLowerCase()));
+    if (!extras.length) {
+      refreshPinnedDots();
+      return;
+    }
+    const runSep = document.createElement('div');
+    runSep.className = 'sep';
+    runSep.id = 'runSep';
+    content.appendChild(runSep);
+    for (const a of extras) {
+      const el = document.createElement('div');
+      el.className = 'item running-item';
+      el.dataset.name = a.name;
+      updateTip(el, true, true);
+      const d = document.createElement('div');
+      d.className = 'dot';
+      el.appendChild(d);
+      makeIcon(el, a.path, a.name);
+      bindPress(el, () => window.dockAPI.focusWindow(a.handle, a.pid));
+      content.appendChild(el);
+    }
+    refreshPinnedDots();
+  }
+
+  function refreshPinnedDots() {
+    const runPaths = new Set(runningApps.map(a => a.path.toLowerCase()));
+    content.querySelectorAll('.pinned-item').forEach(el => {
+      const isRunning = el.dataset.target && runPaths.has(el.dataset.target);
+      renderRunningDot(el, isRunning);
+      updateTip(el, isRunning, false);
+    });
+  }
+
+  // 鱼眼 + 液化形变（rAF 节流）：非均匀缩放模拟液体拉伸，偏离中心带轻微 skew
+  let mouseX = null, rafId = null;
+  function applyFisheye() {
+    rafId = null;
+    if (mouseX === null) return;
+    const dockRect = dock.getBoundingClientRect();
+    const dockCenter = dockRect.left + dockRect.width / 2;
+    content.querySelectorAll('.item').forEach(el => {
+      const r = el.getBoundingClientRect();
+      const center = r.left + r.width / 2;
+      const d = Math.abs(mouseX - center);
+      const t = Math.max(0, 1 - d / 110);
+      const grow = t * 20;
+      const sx = 1 + t * 0.32;
+      const sy = 1 + t * 0.30; // 纵向略小于横向 → 液化拉伸感
+      const skew = ((center - dockCenter) / (dockRect.width / 2)) * 1.6 * t;
+      el.style.transform = `scale(${sx}, ${sy}) skewX(${skew}deg)`;
+      el.style.margin = `0 ${grow}px`;
+    });
+  }
+  dock.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX;
+    if (rafId === null) rafId = requestAnimationFrame(applyFisheye);
+    // 高光跟随鼠标（关闭默认流动动画，转为指针驱动）
+    spec.style.animation = 'none';
+    const r = dock.getBoundingClientRect();
+    const rel = (e.clientX - r.left) / r.width - 0.5;
+    spec.style.transform = `translateX(${rel * 24}px)`;
+    // 悬停轻微倾斜（底部为轴）
+    dock.style.transform = 'perspective(700px) rotateX(6deg)';
+  });
+  dock.addEventListener('mouseleave', () => {
+    mouseX = null;
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    content.querySelectorAll('.item').forEach(el => {
+      el.style.transform = '';
+      el.style.margin = '';
+    });
+    spec.style.animation = '';
+    spec.style.transform = '';
+    dock.style.transform = '';
+  });
+
+  bindPress(document.getElementById('menuBtn'), () => window.dockAPI.toggleLauncher());
+  document.getElementById('unpinItem').addEventListener('click', () => {
+    if (menuTarget) window.dockAPI.unpin(menuTarget);
+    miniMenu.style.display = 'none';
+  });
+  document.addEventListener('click', (e) => {
+    if (!miniMenu.contains(e.target)) miniMenu.style.display = 'none';
+  });
+  dock.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.pinned-item') || e.target.closest('.running-item')) return;
+    e.preventDefault();
+    window.dockAPI.openDockMenu();
+  });
+
+  window.dockAPI.onPinnedChanged(renderPinned);
+  window.dockAPI.onRunningChanged(renderRunning);
+  window.dockAPI.getPinned().then(renderPinned);
+  window.dockAPI.getRunning().then(renderRunning);
+</script>
+</body>
+</html>

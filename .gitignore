@@ -1,0 +1,26 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+source/dist/
+build/Release/
+
+# 发布包（体积过大，请通过 GitHub Releases 分发）
+/Desktop-Dock-Setup-*.exe
+/*.zip
+*.msi
+*.7z
+
+# 运行时图标缓存（首次启动自动生成）
+source/icon-cache/
+icon-cache/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log
+npm-debug.log*
